@@ -14,14 +14,16 @@ ADC_REG_CONFIG     = 0x01
 #            101  -> A1 gegen GND
 #            110  -> A2 gegen GND
 #            111  -> A3 gegen GND
-# Bit 11-9:  000  -> Gain (+/- 6.144V)
+# Bit 11-9:  000  -> Gain (+/- 6.144V, 187.5uV)
+#            001  -> +/- 4.096V, 125.0uV
 # Bit 8:     1    -> Modus (Power-down / Single-Shot)
 # Bit 7-5:   100  -> Datenrate (128 Samples per Second)
 # Bit 4-0:   00011-> Komparator deaktiviert (Standard)
-ADC_CONFIG = 0xC183 
+ADC_CONFIG = 0xC383 
+ADC_FACTOR = (4.096 / 32768.0) * 6 * 14.1 /  13.8240
 
 # I2C-Bus 1 initialisieren (wird für Raspberry Pi typischerweise verwendet)
-bus = smbus.SMBus(1)
+bus = smbus.SMBus(3)
 
 def read_ads1115(channel):
     assert 0 <= channel <= 3, f"Channel out of range: {channel}. Must be between 0 and 3."
@@ -45,9 +47,9 @@ def read_ads1115(channel):
         raw_value -= 65536
         
     # 6. Umrechnung in Spannung (bei Gain +/- 6.144V)
-    voltage = raw_value * (6.144 / 32768.0)
+    voltage = raw_value * ADC_FACTOR
     
-    return raw_value, voltage
+    return voltage
 
 # Hauptschleife
 try:
@@ -55,8 +57,9 @@ try:
     print("-" * 40)
     
     while True:
-        raw, volt = read_ads1115()
-        print(f"Rohwert: {raw:>6d} | Spannung: {volt:>7.4f} V")
+        volt1 = read_ads1115(2)
+        volt2 = read_ads1115(3)
+        print(f"Spannung I: {volt1:>7.4f} V | Spannung II: {volt2:>7.4f} V")
         
         # Pause zwischen den Messungen
         time.sleep(0.5)

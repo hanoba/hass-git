@@ -13,6 +13,7 @@ MQTT_TOPIC = "home/sensors/gy511"
 BUS_NUMBER = 3
 MAG_ADDRESS = 0x1E  # Magnetometer
 ACC_ADDRESS = 0x19  # Beschleunigungssensor
+ADC_ADDRESS = 0x48  # ADS1115 (Standard: 0x48)
 
 # Register Magnetometer
 CRA_REG_M = 0x00
@@ -25,8 +26,53 @@ CTRL_REG1_A = 0x20
 CTRL_REG4_A = 0x23
 OUT_X_L_A = 0x28 
 
+# ADS1115 Register Adressen
+ADC_REG_CONVERSION = 0x00
+ADC_REG_CONFIG     = 0x01
+
+# Konfiguration (16-Bit) - Hex: 0xC183
+# Bit 15:    1    -> Startet eine Einzelschuss-Messung
+# Bit 14-12: 100  -> Eingang wählen (A0 gegen GND)
+#            101  -> A1 gegen GND
+#            110  -> A2 gegen GND
+#            111  -> A3 gegen GND
+# Bit 11-9:  000  -> Gain (+/- 6.144V, 187.5uV)
+#            001  -> +/- 4.096V, 125.0uV
+# Bit 8:     1    -> Modus (Power-down / Single-Shot)
+# Bit 7-5:   100  -> Datenrate (128 Samples per Second)
+# Bit 4-0:   00011-> Komparator deaktiviert (Standard)
+ADC_CONFIG = 0xC383 
+ADC_FACTOR = (4.096 / 32768.0) * 14.1 / 13.8240
+AdcFactor = [ADC_FACTOR, ADC_FACTOR, ADC_FACTOR*6, ADC_FACTOR*6*11.98/12.10]
+
 # Bus initialisieren
 bus = smbus.SMBus(BUS_NUMBER)
+
+def read_ads1115(channel):
+    assert 0 <= channel <= 3, f"Channel out of range: {channel}. Must be between 0 and 3."
+    config = ADC_CONFIG | (channel << 12)
+    
+    # 1. Konfiguration schreiben (Big-Endian: High-Byte zuerst)
+    config_bytes = [(config >> 8) & 0xFF, config & 0xFF]
+    bus.write_i2c_block_data(ADC_ADDRESS, ADC_REG_CONFIG, config_bytes)
+    
+    # 2. Warten, bis die Konvertierung abgeschlossen ist.
+    time.sleep(0.01) 
+    
+    # 3. Ergebnis aus dem Conversion Register lesen (2 Bytes)
+    res = bus.read_i2c_block_data(ADC_ADDRESS, ADC_REG_CONVERSION, 2)
+    
+    # 4. Bytes zusammenfügen (Big-Endian)
+    raw_value = (res[0] << 8) | res[1]
+    
+    # 5. Zweierkomplement für negative Werte anwenden (16-Bit)
+    if raw_value > 32767:
+        raw_value -= 65536
+        
+    # 6. Umrechnung in Spannung (bei Gain +/- 6.144V)
+    voltage = raw_value * AdcFactor[channel]
+    
+    return voltage
 
 def init_sensors():
     """Weckt beide Sensoren auf und konfiguriert sie."""
@@ -84,15 +130,24 @@ def get_sensor_data():
     acc_y_raw = read_raw_acc(OUT_X_L_A + 2)
     acc_z_raw = read_raw_acc(OUT_X_L_A + 4)
 
-    acc_x = acc_x_raw * 0.001
-    acc_y = acc_y_raw * 0.001
-    acc_z = acc_z_raw * 0.001
+    x_neigung = math.degrees(math.atan2(acc_x_raw, acc_z_raw))
+    y_neigung = math.degrees(math.atan2(acc_y_raw, acc_z_raw))
+    
+    #acc_x = acc_x_raw * 0.001
+    #acc_y = acc_y_raw * 0.001
+    #acc_z = acc_z_raw * 0.001
+    
+    fs = read_ads1115(1)
+    vin1 = read_ads1115(2)
+    vin2 = read_ads1115(3)
 
     return {
-        "heading": round(heading_deg, 1),
-        "accel_x": round(acc_x, 3),
-        "accel_y": round(acc_y, 3),
-        "accel_z": round(acc_z, 3)
+        "heading": int(round(heading_deg, 0)),
+        "x_neigung": round(x_neigung, 1),
+        "y_neigung": round(y_neigung, 1),
+        "fs": round(fs, 1),
+        "vin1": round(vin1, 1),
+        "vin2": round(vin2, 1),
     }
 
 # --- Hauptprogramm ---
