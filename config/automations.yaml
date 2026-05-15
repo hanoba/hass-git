@@ -1,0 +1,12 @@
+- id: '1778747947493'
+  alias: Regenwasserfilter-Warnung
+  description: ''
+  triggers:
+  - entity_id: sensor.feuchtigkeitssensor
+    below: 2
+    trigger: numeric_state
+  actions:
+  - data:
+      title: '⚠️ Home Assistant Alarm:  Regenwasserfilter verstopft!'
+      message: Bitte Regenwasserfilter überprüfen.
+    action: notify.email_alarm
