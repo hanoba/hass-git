@@ -9,7 +9,7 @@ class ShutdownHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"Shutdown initiated")
             print("Shutdown-Befehl von HA empfangen...")
-            #os.system("sudo shutdown -h now")
+            os.system("sudo shutdown -h now")
         else:
             self.send_response(404)
             self.end_headers()
